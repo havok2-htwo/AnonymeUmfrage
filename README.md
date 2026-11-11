@@ -78,13 +78,21 @@ Ohne `DATA_DIR` liegt die Datenbank unter `./data/umfrage.db`. Für den Dauerbet
 
 ## Admin anlegen
 
-Entweder beim ersten Start über `ADMIN_USER` und `ADMIN_PASSWORD` (siehe oben) oder jederzeit per
+**Auslieferungszustand:** Gibt es beim Start noch keinen Admin (und sind `ADMIN_USER`/`ADMIN_PASSWORD` nicht
+gesetzt), legt der Server den Zugang **admin / admin** an. Bei der ersten Anmeldung muss das Passwort geändert
+werden; bis dahin ist im Adminbereich nur die Seite „Passwort“ erreichbar. Deshalb direkt nach der Installation
+anmelden und das Passwort ändern.
+
+Später lässt sich das eigene Passwort jederzeit im Adminbereich unter „Passwort“ ändern.
+
+Alternativ beim ersten Start über `ADMIN_USER` und `ADMIN_PASSWORD` (siehe oben) oder jederzeit per
 Kommandozeile. Das Passwort wird ohne Echo abgefragt (oder aus `ADMIN_PASSWORD` gelesen), mindestens
 10 Zeichen:
 
 ```sh
 node src/cli.js create-admin <benutzername> [anzeigename]
 node src/cli.js set-password <benutzername>
+node src/cli.js rename-admin <alt> <neu> [anzeigename]
 
 # im Container
 docker compose exec umfrage node src/cli.js create-admin <benutzername>
@@ -104,7 +112,7 @@ Weitere Admins lassen sich danach im Adminbereich unter „Admins“ anlegen und
 | `TRUST_PROXY` | `false` | `X-Forwarded-Proto` beim Bauen von Links beachten (nie für IP-Adressen) |
 | `REPO` | `havok2-htwo/AnonymeUmfrage` | GitHub-Repository für den Abgleich |
 | `INTEGRITY_CHECK` | `on` | `off` schaltet den GitHub-Abgleich ab |
-| `ADMIN_USER`, `ADMIN_PASSWORD` | leer | legt beim Start einen Admin an, falls noch keiner existiert |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | leer | legt beim Start einen Admin an, falls noch keiner existiert (sonst admin/admin mit Pflicht zum Passwortwechsel) |
 | `SESSION_HOURS` | `12` | Dauer einer Admin-Sitzung |
 
 ## nginx davor (mit HTTPS, ohne Access-Log)

@@ -16,6 +16,7 @@ const { parseCookies, setCookie, clearCookie } = require('../http/cookies');
 const { HttpError, sendHtml, redirect } = require('../http/respond');
 
 const COOKIE_PATH = '/admin';
+const FORCED_CHANGE_ALLOWED = new Set(['/admin/passwort', '/admin/logout']);
 
 /** Nur interne Admin-Ziele zulassen (kein offener Redirect). */
 function safeNext(value) {
@@ -79,6 +80,11 @@ function requireAdmin(handler, opts = {}) {
       redirect(res, '/admin/login');
       return;
     }
+    // Standardzugang: bis ein eigenes Passwort gesetzt ist, nur Passwortwechsel und Abmelden.
+    if (session.admin.must_change_password && !FORCED_CHANGE_ALLOWED.has(req.path)) {
+      redirect(res, '/admin/passwort');
+      return;
+    }
     if (req.method === 'POST') {
       if (!checkOrigin(req, ctx.config)) {
         throw new HttpError(403, 'Die Anfrage kam nicht von dieser Seite. Bitte die Seite neu laden.');
@@ -125,7 +131,7 @@ function register(router, ctx) {
       secure: ctx.config.cookieSecure,
       maxAge: ctx.config.sessionHours * 3600,
     });
-    redirect(res, next || '/admin');
+    redirect(res, result.admin.must_change_password ? '/admin/passwort' : (next || '/admin'));
   });
 
   router.post('/admin/logout', requireAdmin(async (req, res) => {

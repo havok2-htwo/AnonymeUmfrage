@@ -7,7 +7,6 @@ const { flash, field, formErrors } = require('./admin');
 
 function adminsBody({ req, csrfField, admins, notice, state = {} }) {
   const create = state.create || { errors: {}, values: {} };
-  const pw = state.password || { errors: {} };
   const me = req.admin.id;
   const rows = admins.map((a) => html`
     <tr>
@@ -59,16 +58,9 @@ function adminsBody({ req, csrfField, admins, notice, state = {} }) {
       </section>
 
       <section class="panel" aria-labelledby="passwort">
-        <h2 class="panel-title" id="passwort">Eigenes Passwort ändern</h2>
-        <form method="post" action="/admin/admins/password" class="form">
-          ${csrfField(req)}
-          ${formErrors(pw.errors)}
-          <input type="text" name="username" value="${req.admin.username}" autocomplete="username" hidden>
-          ${field({ id: 'pw-current', name: 'current', label: 'Aktuelles Passwort', type: 'password', error: pw.errors.current, required: true, attrs: html`autocomplete="current-password"` })}
-          ${field({ id: 'pw-new', name: 'password', label: 'Neues Passwort', type: 'password', error: pw.errors.password, required: true, hint: 'Mindestens 10 Zeichen. Andere Sitzungen werden beendet.', attrs: html`minlength="10" autocomplete="new-password"` })}
-          ${field({ id: 'pw-new2', name: 'password2', label: 'Neues Passwort wiederholen', type: 'password', error: pw.errors.password2, required: true, attrs: html`minlength="10" autocomplete="new-password"` })}
-          <div class="actions"><button type="submit" class="btn btn-primary">Passwort ändern</button></div>
-        </form>
+        <h2 class="panel-title" id="passwort">Eigenes Passwort</h2>
+        <p>Das eigene Passwort lässt sich jederzeit ändern. Andere Sitzungen dieses Kontos werden dabei beendet.</p>
+        <div class="actions"><a class="btn btn-secondary" href="/admin/passwort">Passwort ändern</a></div>
       </section>
     </div>`;
 }

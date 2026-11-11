@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -84,7 +84,12 @@ function migrate(db) {
   if (current > SCHEMA_VERSION) {
     throw new Error(`Datenbank hat Schema-Version ${current}, diese Programmversion kennt nur ${SCHEMA_VERSION}.`);
   }
-  // Künftige Migrationen: if (current < 2) { … } usw.
+  // Schema 2: Admins können zum Passwortwechsel gezwungen werden (Standardzugang admin/admin).
+  const adminCols = db.prepare('PRAGMA table_info(admins)').all().map((c) => c.name);
+  if (!adminCols.includes('must_change_password')) {
+    db.exec('ALTER TABLE admins ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+  }
+  // Künftige Migrationen: if (current < 3) { … } usw.
   if (current !== SCHEMA_VERSION) {
     db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
       + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(String(SCHEMA_VERSION));

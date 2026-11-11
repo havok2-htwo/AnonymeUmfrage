@@ -4,6 +4,7 @@
 //
 //   node src/cli.js create-admin <benutzername> [anzeigename]
 //   node src/cli.js set-password <benutzername>
+//   node src/cli.js rename-admin <alt> <neu> [anzeigename]
 //
 // Das Passwort kommt aus der Umgebungsvariable ADMIN_PASSWORD oder wird ohne Echo abgefragt.
 
@@ -16,6 +17,7 @@ function usage() {
     'Verwendung:',
     '  node src/cli.js create-admin <benutzername> [anzeigename]',
     '  node src/cli.js set-password <benutzername>',
+    '  node src/cli.js rename-admin <alt> <neu> [anzeigename]',
     '',
     'Das Passwort wird aus ADMIN_PASSWORD gelesen oder abgefragt.',
     '',
@@ -86,6 +88,15 @@ async function main(argv) {
       const password = await readPassword();
       await auth.setPassword(db, admin.id, password);
       process.stdout.write(`Passwort für „${admin.username}“ gesetzt. Alle Sitzungen wurden beendet.\n`);
+      return 0;
+    }
+    if (command === 'rename-admin') {
+      const admin = auth.getAdminByUsername(db, username);
+      if (!admin) throw new auth.AuthError(`Admin „${username}“ nicht gefunden.`);
+      const [newName, ...display] = rest;
+      if (!newName) throw new auth.AuthError('Neuer Benutzername fehlt: rename-admin <alt> <neu> [anzeigename]');
+      auth.renameAdmin(db, admin.id, { username: newName, displayName: display.join(' ') || admin.display_name });
+      process.stdout.write(`Admin „${admin.username}“ heißt jetzt „${newName}“.\n`);
       return 0;
     }
     usage();

@@ -9,6 +9,9 @@ const { nowIso, nowSec } = require('./db');
 const SCRYPT = { N: 2 ** 15, r: 8, p: 1, keylen: 64, saltBytes: 16 };
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 const MIN_PASSWORD_LENGTH = 10;
+// Auslieferungszustand: gibt es keinen Admin, wird admin/admin angelegt und muss sofort geändert werden.
+const DEFAULT_ADMIN_USERNAME = 'admin';
+const DEFAULT_ADMIN_PASSWORD = 'admin';
 const MAX_PASSWORD_LENGTH = 1024;
 const SESSION_COOKIE = 'sid';
 
@@ -30,6 +33,7 @@ function validatePassword(password) {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
     return `Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`;
   }
+  if (password.trim().toLowerCase() === DEFAULT_ADMIN_PASSWORD) return 'Das Standardpasswort ist nicht erlaubt.';
   if (password.length > MAX_PASSWORD_LENGTH) return 'Das Passwort ist zu lang.';
   return null;
 }
@@ -90,15 +94,15 @@ function countAdmins(db) {
 }
 
 function listAdmins(db) {
-  return db.prepare('SELECT id, username, display_name, created_at FROM admins ORDER BY username').all();
+  return db.prepare('SELECT id, username, display_name, must_change_password, created_at FROM admins ORDER BY username').all();
 }
 
 function getAdminById(db, id) {
-  return db.prepare('SELECT id, username, display_name, created_at FROM admins WHERE id = ?').get(id) || null;
+  return db.prepare('SELECT id, username, display_name, must_change_password, created_at FROM admins WHERE id = ?').get(id) || null;
 }
 
 function getAdminByUsername(db, username) {
-  return db.prepare('SELECT id, username, display_name, created_at FROM admins WHERE username = ?')
+  return db.prepare('SELECT id, username, display_name, must_change_password, created_at FROM admins WHERE username = ?')
     .get(normalizeUsername(username)) || null;
 }
 
@@ -130,12 +134,38 @@ async function createAdmin(db, { username, displayName, password }) {
   return Number(info.lastInsertRowid);
 }
 
-/** Setzt ein neues Passwort und beendet alle Sitzungen dieses Admins. */
+/**
+ * Legt den Standardzugang admin/admin an, falls es noch keinen Admin gibt. Das Passwort muss bei der
+ * ersten Anmeldung geändert werden; bis dahin ist im Adminbereich nur der Passwortwechsel erreichbar.
+ * @returns {Promise<boolean>} true, wenn angelegt
+ */
+async function createDefaultAdmin(db) {
+  if (countAdmins(db) > 0) return false;
+  const hash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
+  db.prepare('INSERT INTO admins (username, display_name, password_hash, must_change_password, created_at) '
+    + 'VALUES (?, ?, ?, 1, ?)').run(DEFAULT_ADMIN_USERNAME, 'Admin', hash, nowIso());
+  return true;
+}
+
+/** Benennt einen Admin um (Benutzername und optional Anzeigename). */
+function renameAdmin(db, adminId, { username, displayName }) {
+  const u = normalizeUsername(username);
+  const userErr = validateUsername(u);
+  if (userErr) throw new AuthError(userErr);
+  const other = getAdminByUsername(db, u);
+  if (other && other.id !== adminId) throw new AuthError('Dieser Benutzername ist bereits vergeben.');
+  const name = String(displayName || '').trim() || u;
+  if (name.length > 100) throw new AuthError('Der Anzeigename ist zu lang.');
+  const info = db.prepare('UPDATE admins SET username = ?, display_name = ? WHERE id = ?').run(u, name, adminId);
+  if (info.changes === 0) throw new AuthError('Admin nicht gefunden.');
+}
+
+/** Setzt ein neues Passwort, hebt den Zwang zum Wechsel auf und beendet alle Sitzungen dieses Admins. */
 async function setPassword(db, adminId, password) {
   const pwErr = validatePassword(password);
   if (pwErr) throw new AuthError(pwErr);
   const hash = await hashPassword(password);
-  const info = db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, adminId);
+  const info = db.prepare('UPDATE admins SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, adminId);
   if (info.changes === 0) throw new AuthError('Admin nicht gefunden.');
   db.prepare('DELETE FROM sessions WHERE admin_id = ?').run(adminId);
 }
@@ -257,12 +287,12 @@ async function verifyLogin(db, username, password, throttle = defaultThrottle) {
   if (!throttle.begin(u)) return { ok: false, error: LOGIN_LOCKED_MESSAGE, locked: true };
   let ok = false;
   try {
-    const row = u ? db.prepare('SELECT id, username, display_name, password_hash FROM admins WHERE username = ?').get(u) : null;
+    const row = u ? db.prepare('SELECT id, username, display_name, must_change_password, password_hash FROM admins WHERE username = ?').get(u) : null;
     const pw = typeof password === 'string' ? password.slice(0, MAX_PASSWORD_LENGTH) : '';
     const match = await verifyPassword(pw, row ? row.password_hash : await dummyHash());
     if (!row || !match) return { ok: false, error: LOGIN_FAILED_MESSAGE, locked: false };
     ok = true;
-    return { ok: true, admin: { id: row.id, username: row.username, display_name: row.display_name } };
+    return { ok: true, admin: { id: row.id, username: row.username, display_name: row.display_name, must_change_password: row.must_change_password === 1 } };
   } finally {
     throttle.end(u, ok);
   }
@@ -296,7 +326,7 @@ function createSession(db, adminId, hours = 12) {
 function getSession(db, token) {
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
   const row = db.prepare(`
-    SELECT s.token_hash, s.csrf, s.expires_at, a.id, a.username, a.display_name
+    SELECT s.token_hash, s.csrf, s.expires_at, a.id, a.username, a.display_name, a.must_change_password
     FROM sessions s JOIN admins a ON a.id = s.admin_id
     WHERE s.token_hash = ?`).get(sha256(token));
   if (!row) return null;
@@ -308,7 +338,7 @@ function getSession(db, token) {
     tokenHash: row.token_hash,
     csrf: row.csrf,
     expiresAt: row.expires_at,
-    admin: { id: row.id, username: row.username, display_name: row.display_name },
+    admin: { id: row.id, username: row.username, display_name: row.display_name, must_change_password: row.must_change_password === 1 },
   };
 }
 
@@ -331,6 +361,10 @@ function safeEqual(a, b) {
 
 module.exports = {
   SESSION_COOKIE,
+  DEFAULT_ADMIN_USERNAME,
+  DEFAULT_ADMIN_PASSWORD,
+  createDefaultAdmin,
+  renameAdmin,
   MIN_PASSWORD_LENGTH,
   LOGIN_FAILED_MESSAGE,
   LOGIN_LOCKED_MESSAGE,

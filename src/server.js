@@ -20,11 +20,19 @@ const { createContext, registerRoutes } = require('./routes');
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Erster Admin: aus ADMIN_USER/ADMIN_PASSWORD, sonst der Standardzugang admin/admin, dessen Passwort bei
+ * der ersten Anmeldung geändert werden muss. Gibt es schon einen Admin, passiert nichts.
+ * @returns {Promise<''|'env'|'default'>}
+ */
 async function bootstrapAdmin(db, config) {
-  if (!config.adminUser || !config.adminPassword) return false;
-  if (auth.countAdmins(db) > 0) return false;
-  await auth.createAdmin(db, { username: config.adminUser, displayName: config.adminUser, password: config.adminPassword });
-  return true;
+  if (auth.countAdmins(db) > 0) return '';
+  if (config.adminUser && config.adminPassword) {
+    await auth.createAdmin(db, { username: config.adminUser, displayName: config.adminUser, password: config.adminPassword });
+    return 'env';
+  }
+  await auth.createDefaultAdmin(db);
+  return 'default';
 }
 
 function createRequestHandler({ router, ctx, serveStatic }) {
@@ -69,7 +77,11 @@ async function createApp({ config = loadConfig(), listen = true } = {}) {
   const db = openDatabase(config.dbPath);
   // Ein VACUUM, das vor dem letzten Beenden fehlgeschlagen ist, nachholen (SPEC §3 Regel 13).
   vacuumSafely(db);
-  if (await bootstrapAdmin(db, config)) process.stdout.write('Erster Admin aus ADMIN_USER angelegt.\n');
+  const boot = await bootstrapAdmin(db, config);
+  if (boot === 'env') process.stdout.write('Erster Admin aus ADMIN_USER angelegt.\n');
+  if (boot === 'default') {
+    process.stdout.write('Standardzugang admin/admin angelegt. Das Passwort muss bei der ersten Anmeldung geändert werden.\n');
+  }
   auth.cleanupSessions(db);
 
   integrity.start(config);
@@ -129,9 +141,6 @@ async function main() {
   const config = loadConfig();
   const app = await createApp({ config });
   process.stdout.write(`Anonyme Umfrage ${version} läuft auf ${app.url}\n`);
-  if (auth.countAdmins(app.db) === 0) {
-    process.stdout.write('Noch kein Admin vorhanden. Anlegen mit: node src/cli.js create-admin <benutzername>\n');
-  }
   let stopping = false;
   const shutdown = () => {
     if (stopping) return;

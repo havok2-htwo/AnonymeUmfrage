@@ -344,7 +344,7 @@ Verbindlich, siehe Intranet-CI-Leitfaden. Kurzfassung:
 | `TRUST_PROXY` | `false` | nur für `X-Forwarded-Proto` beim Bauen von Links, nie für IPs |
 | `REPO` | `havok2-htwo/AnonymeUmfrage` | GitHub-Repo für den Abgleich |
 | `INTEGRITY_CHECK` | `on` | `off` schaltet den GitHub-Abgleich ab |
-| `ADMIN_USER`, `ADMIN_PASSWORD` | leer | legt beim Start einen Admin an, falls noch keiner existiert |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | leer | legt beim Start einen Admin an, falls noch keiner existiert (sonst admin/admin mit Pflicht zum Passwortwechsel) |
 | `SESSION_HOURS` | `12` | |
 
 ## 10. Sicherheit Admin
@@ -358,6 +358,11 @@ Verbindlich, siehe Intranet-CI-Leitfaden. Kurzfassung:
   reserviert und zählt bis zum Ergebnis mit, damit parallele Anfragen die Grenzen nicht umgehen. Laufen schon
   4 Prüfungen gleichzeitig, wird sofort mit `429` abgelehnt (ohne scrypt).
 - Gleiche Fehlermeldung für unbekannten Benutzer und falsches Passwort.
+- Auslieferungszustand: Gibt es keinen Admin und sind `ADMIN_USER`/`ADMIN_PASSWORD` nicht gesetzt, legt der
+  Server `admin`/`admin` mit `must_change_password = 1` an (Schema 2). Solange das Flag gesetzt ist, leitet jede
+  Admin-Route außer `/admin/passwort` und `/admin/logout` auf `/admin/passwort` um. „admin“ ist als neues
+  Passwort verboten, das neue Passwort muss sich vom alten unterscheiden.
+- Eigenes Passwort ändern: `GET/POST /admin/passwort` (Navigation „Passwort“).
 
 ## 11. Tests (Mindestumfang)
 

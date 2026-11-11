@@ -22,6 +22,7 @@ const THEME_ICON = raw('<svg class="icon" viewBox="0 0 24 24" width="18" height=
 const ADMIN_NAV = [
   { key: 'surveys', href: '/admin', label: 'Umfragen' },
   { key: 'admins', href: '/admin/admins', label: 'Admins' },
+  { key: 'passwort', href: '/admin/passwort', label: 'Passwort' },
 ];
 
 function adminNav(req, active) {
@@ -74,6 +75,7 @@ function layout({
 ${noindex ? raw('<meta name="robots" content="noindex, nofollow">\n') : ''}<meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark light">
 <title>${fullTitle}</title>
+<link rel="icon" href="${asset('/img/favicon.svg')}" type="image/svg+xml">
 <link rel="preload" href="/fonts/Montserrat-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="${asset('/css/app.css')}">
 <script src="${asset('/js/theme.js')}"></script>

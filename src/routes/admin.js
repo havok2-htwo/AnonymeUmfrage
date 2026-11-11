@@ -15,6 +15,7 @@ const { setCookie } = require('../http/cookies');
 const { noticeFromQuery, dashboardBody } = require('../views/admin');
 const { editorBody, overviewBody } = require('../views/admin-survey');
 const { adminsBody } = require('../views/admin-admins');
+const { passwordBody } = require('../views/admin-password');
 const { surveyFormPage } = require('../views/survey');
 
 function parseId(value, ctx) {
@@ -74,6 +75,17 @@ function renderAdmins(ctx, req, res, { status = 200, state = {}, notice = '' } =
     active: 'admins',
     scripts: ['/js/admin.js'],
     body: adminsBody({ req, csrfField, admins: ctx.auth.listAdmins(ctx.db), notice, state }),
+  });
+}
+
+function renderPassword(ctx, req, res, { status = 200, errors = {}, notice = '' } = {}) {
+  ctx.render(res, {
+    status,
+    title: 'Passwort ändern',
+    req,
+    active: 'passwort',
+    width: 'narrow',
+    body: passwordBody({ req, csrfField, notice, errors }),
   });
 }
 
@@ -239,19 +251,24 @@ function register(router, ctx) {
     ctx.redirect(res, '/admin/admins?hinweis=admin-neu');
   }));
 
-  router.post('/admin/admins/password', requireAdmin(async (req, res) => {
+  router.get('/admin/passwort', requireAdmin(async (req, res) => {
+    renderPassword(ctx, req, res, { notice: noticeFromQuery(req) });
+  }));
+
+  router.post('/admin/passwort', requireAdmin(async (req, res) => {
     const current = asString(req.body.current);
     const password = asString(req.body.password);
     const errors = {};
     const check = await ctx.auth.verifyLogin(ctx.db, req.admin.username, current);
     if (!check.ok) errors.current = check.locked ? check.error : 'Das aktuelle Passwort ist falsch.';
     else if (password !== asString(req.body.password2)) errors.password2 = 'Die beiden neuen Passwörter stimmen nicht überein.';
+    else if (password === current) errors.password = 'Das neue Passwort muss sich vom aktuellen unterscheiden.';
     else {
       const pwErr = ctx.auth.validatePassword(password);
       if (pwErr) errors.password = pwErr;
     }
     if (Object.keys(errors).length) {
-      renderAdmins(ctx, req, res, { status: 422, state: { password: { errors } } });
+      renderPassword(ctx, req, res, { status: 422, errors });
       return;
     }
     // setPassword beendet alle Sitzungen dieses Admins; für dieses Gerät gleich eine neue anlegen.
@@ -264,7 +281,7 @@ function register(router, ctx) {
       secure: ctx.config.cookieSecure,
       maxAge: ctx.config.sessionHours * 3600,
     });
-    ctx.redirect(res, '/admin/admins?hinweis=passwort');
+    ctx.redirect(res, '/admin?hinweis=passwort');
   }));
 
   router.post('/admin/admins/:aid/delete', requireAdmin(async (req, res) => {

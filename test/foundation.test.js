@@ -52,7 +52,7 @@ test('Schema: answers ist WITHOUT ROWID ohne verbindende Spalte', () => {
   assert.deepEqual(cols, ['id', 'question_id', 'value']);
   const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'answers'").get().sql;
   assert.match(sql, /WITHOUT ROWID/);
-  assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, '1');
+  assert.equal(db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value, String(require('../src/db').SCHEMA_VERSION));
   assert.equal(db.prepare('PRAGMA secure_delete').get().secure_delete, 1);
   assert.throws(() => transaction(db, (d) => {
     d.prepare("INSERT INTO meta (key, value) VALUES ('x', 'y')").run();

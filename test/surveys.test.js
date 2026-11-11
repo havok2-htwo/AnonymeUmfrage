@@ -363,8 +363,8 @@ test('HTTP: Umfrage bauen, öffnen, anonym teilnehmen, schließen', async (t) =>
   const list = await (await get('/admin/admins')).text();
   const otherId = list.match(/\/admin\/admins\/(\d+)\/delete/)[1];
   assert.equal((await post(`/admin/admins/${otherId}/delete`, {})).status, 303);
-  assert.equal((await post('/admin/admins/password', { current: 'falsch-falsch', password: 'neues-passwort-1', password2: 'neues-passwort-1' })).status, 422);
-  const changed = await post('/admin/admins/password', { current: 'geheim-genug-123', password: 'neues-passwort-1', password2: 'neues-passwort-1' });
+  assert.equal((await post('/admin/passwort', { current: 'falsch-falsch', password: 'neues-passwort-1', password2: 'neues-passwort-1' })).status, 422);
+  const changed = await post('/admin/passwort', { current: 'geheim-genug-123', password: 'neues-passwort-1', password2: 'neues-passwort-1' });
   assert.equal(changed.status, 303);
   const oldSid = sid;
   sid = changed.headers.get('set-cookie').split(';')[0];
