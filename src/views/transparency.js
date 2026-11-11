@@ -26,20 +26,22 @@ const RULES = [
   ['Jede Antwort steht für sich', 'Jede Antwort auf eine Frage ist ein eigener Datensatz mit einer zufälligen ID. Es gibt keine Spalte und keine Tabelle, die Antworten derselben Person verbindet, und keine Reihenfolge des Eintragens, über die sich Antworten wieder zusammensetzen lassen.'],
   ['Ausgabe immer gemischt', 'In Auswertung und PDF werden die Antworten jeder Frage zufällig gemischt. Aus der Reihenfolge lässt sich nicht ablesen, wer zuerst oder zuletzt geantwortet hat.'],
   ['Nur ein Zähler', 'Pro Umfrage wird nur gezählt, wie viele Teilnahmen es gab. Eine Teilnahmeliste gibt es nicht.'],
-  ['Ergebnisse erst nach Abschluss', 'Solange eine Umfrage offen ist, sieht auch der Adminbereich nur die Zahl der Teilnahmen. Inhalte gibt es erst, wenn die Umfrage geschlossen ist und eine Mindestzahl an Teilnahmen erreicht wurde (Standard 3, mindestens 2). Eine Teilnahme ohne eine einzige Antwort wird abgelehnt und nicht gezählt. Haben eine einzelne Frage weniger Personen beantwortet als die Mindestzahl, wird diese Frage in Auswertung und PDF ausgeblendet.'],
+  ['Ergebnisse erst nach Abschluss', 'Solange eine Umfrage offen ist, sieht auch der Adminbereich keine Inhalte und nicht einmal die Zahl der Teilnahmen; eine laufend sichtbare Zahl würde verraten, wann jemand teilgenommen hat. Inhalte gibt es erst, wenn die Umfrage geschlossen ist und eine Mindestzahl an Teilnahmen erreicht wurde (Standard 3, mindestens 2). Wird die Mindestzahl nicht erreicht, werden die Antworten beim Schließen gelöscht. Eine Teilnahme ohne eine einzige Antwort wird abgelehnt und nicht gezählt. Haben eine einzelne Frage weniger Personen beantwortet als die Mindestzahl, wird diese Frage in Auswertung und PDF ausgeblendet.'],
   ['Schließen ist endgültig', 'Eine geschlossene Umfrage lässt sich nicht wieder öffnen. So kann niemand nach dem Ansehen der Ergebnisse auf eine einzelne neue Antwort warten und sie per Vergleich zuordnen.'],
   ['Fragen sind eingefroren', 'Nach dem Öffnen lassen sich Fragen, Antwortmöglichkeiten, Reihenfolge und Mindestzahl nicht mehr ändern.'],
   ['Keine Drittanbieter', 'Schriften, Bilder und Skripte kommen vom eigenen Server. Es gibt keine Analyse, kein CDN und keine eingebetteten Inhalte. Strenge Sicherheitsheader verhindern, dass der Browser fremde Quellen lädt oder die Herkunftsseite weitergibt.'],
   ['Keine Cookies für Teilnehmende', 'Cookies gibt es nur im Adminbereich für die Anmeldung. Die Umfrageseiten setzen und lesen keine Cookies.'],
-  ['Hinweis „bereits teilgenommen“ nur im Browser', 'Nach dem Absenden merkt sich nur der eigene Browser, dass auf diesem Gerät teilgenommen wurde. Diese Information verlässt das Gerät nie und lässt sich jederzeit übergehen.'],
+  ['Hinweis „bereits teilgenommen“ nur im Browser', 'Nach dem Absenden merkt sich nur der eigene Browser, dass auf diesem Gerät teilgenommen wurde. Die Anwendung sendet diese Information nie; sie bleibt im Browser und lässt sich jederzeit übergehen.'],
   ['Absenden ganz oder gar nicht', 'Alle Antworten einer Teilnahme werden gemeinsam gespeichert. Bei einem Fehler wird nichts gespeichert.'],
   ['Leere Antworten werden nicht gespeichert', 'Übersprungene freiwillige Fragen hinterlassen keinen Datensatz. Die Auswertung zeigt pro Frage, wie viele geantwortet haben. Liegt diese Zahl unter der Mindestzahl, steht dort nur „Zu wenige Antworten, zum Schutz der Anonymität ausgeblendet“.'],
-  ['Keine Spuren in der Datenbankdatei', 'Nach jeder Teilnahme wird die Datenbank neu geschrieben (VACUUM). Danach liegen die Datensätze nach ihrer zufälligen ID geordnet in der Datei, nicht in der Reihenfolge des Eintragens. Gelöschte Inhalte werden überschrieben. Schlägt das Neuschreiben einmal fehl, wird es beim Schließen, beim Neustart und im Minutentakt nachgeholt.'],
+  ['Keine Spuren in der Datenbankdatei', 'Nach jeder Teilnahme wird die Datenbank neu geschrieben (VACUUM). Danach liegen die Datensätze nach ihrer zufälligen ID geordnet in der Datei, nicht in der Reihenfolge des Eintragens. Gelöschte Inhalte werden in der Datei überschrieben. Schlägt das Neuschreiben einmal fehl, wird es beim Schließen, beim Neustart und im Minutentakt nachgeholt. Was das für Kopien der Datei und gelöschte Hilfsdateien heißt, steht unten bei den Grenzen.'],
+  ['Umfrage-Code zum Vergleichen', 'Jede Teilnahmeseite zeigt direkt unter dem Titel einen Code wie „7K3M-Q9TD-4WXA“, der aus dem Link berechnet wird. Alle Eingeladenen sehen denselben Code. Wer einen anderen sieht, hat einen eigenen Link bekommen, und dann ist die Umfrage für diese Person nicht anonym.'],
+  ['Formular wird nach dem Absenden geleert', 'Damit „Zurück“ im Browser die eigenen Antworten nicht wieder zeigt, leert die Seite das Formular nach dem Absenden. Ohne JavaScript klappt das nicht in jedem Browser.'],
 ];
 
 const STORED = [
   'die Antworten selbst, jede als eigener Datensatz mit zufälliger ID und ohne Zeitstempel',
-  'pro Umfrage die Zahl der Teilnahmen',
+  'pro Umfrage die Zahl der Teilnahmen (angezeigt erst nach dem Schließen)',
   'Titel, Einleitung und Fragen der Umfrage',
   'Verwaltungsdaten der Umfrage: wer sie angelegt hat, wann sie geöffnet und geschlossen wurde',
   'Admin-Konten (Name, Passwort als scrypt-Hash) und deren Sitzungen (nur als Hash)',
@@ -54,12 +56,18 @@ const NOT_STORED = [
 ];
 
 const LIMITS = [
-  'Freitexte können über Schreibstil oder Inhalt Rückschlüsse auf die Person erlauben. Das kann keine Technik verhindern.',
+  'Wer den Server betreibt, dem muss man vertrauen. Wer ihn kontrolliert, kann die Anwendung absichtlich verändern und dann alles mitlesen, auch IP-Adressen. Gut ist, wenn Betrieb und Umfrage bei verschiedenen Personen liegen oder eine Vertrauensperson die Installation ansieht.',
+  'Wer die Umfrage verwaltet, kann selbst mehrfach über den Link teilnehmen. Wer so oft teilnimmt, dass zusammen mit einer echten Teilnahme die Mindestzahl erreicht ist, und dann schließt, kann die eigenen Antworten abziehen und alle Antworten dieser einen Person lesen. Die Software kann eigene und echte Teilnahmen ohne Kennungen nicht unterscheiden. Dass die Zahl der Teilnahmen bis zum Schließen verborgen bleibt, macht das nur schwerer.',
+  'Bekommt jede Person einen eigenen Link (eine eigene, gleich aussehende Umfrage), ist die Umfrage nicht anonym. Erkennbar ist das am Umfrage-Code, wenn Teilnehmende ihn vergleichen. Nicht erkennbar ist dagegen: Zwei fast gleiche Umfragen an leicht verschiedene Gruppen (etwa einmal an alle, einmal an alle außer einer Person) lassen sich vergleichen und grenzen einzelne Antworten ein.',
+  'Wer die Datenbankdatei zu zwei Zeitpunkten in die Hände bekommt (Datensicherungen, Snapshots), sieht durch Vergleich, welche Antworten dazwischen dazukamen – bei nur einer Teilnahme in dieser Zeit also alle Antworten dieser Person. Wer die Datei lesen kann, sieht Antworten auch schon vor dem Schließen. Gelöschte Hilfsdateien der Datenbank (Rollback-Journal) lassen sich forensisch unter Umständen wiederherstellen.',
+  'Wird die Auswertung in einer sehr kleinen Gruppe geteilt oder ist die Mindestzahl auf 2 gesetzt, kann jede teilnehmende Person durch Abziehen der eigenen Antworten auf die der anderen schließen.',
+  'Freitexte können über Schreibstil oder Inhalt Rückschlüsse auf die Person erlauben. Das kann keine Technik verhindern. Schreibhilfen von Browser, Erweiterungen oder Tastatur können eingegebenen Text an ihre Anbieter senden.',
+  'Die Mindestzahl gilt pro Frage, nicht pro Option. Ein Zählwert von 1 bei einer Option, die nur auf eine Person passt, zeigt deren Teilnahme; haben alle dasselbe geantwortet, kennt man die Antwort jeder Person, von der man weiß, dass sie teilgenommen hat. Wird eine Auswertung in einer sehr kleinen Gruppe geteilt, können Teilnehmende durch Abziehen der eigenen Antworten auf die anderen schließen.',
+  'Der Browserverlauf zeigt, dass und wann die Danke-Seite aufgerufen wurde; dazu kommt der lokale Hinweis „bereits teilgenommen“. Auf geteilten Geräten hilft ein privates Fenster.',
+  'Ein Firmen-Proxy, der verschlüsselte Verbindungen aufbricht, kann Antworten lesen. Wer die Datenmenge je Verbindung protokolliert, kann die Länge langer Freitexte ablesen. Wer den Server dauernd abfragt, kann an Antwortzeiten erkennen, wann jemand teilnimmt (nicht was).',
   'Ein vorgeschalteter Webserver (z. B. nginx) könnte IP-Adressen protokollieren. Die Installationsanleitung zeigt, wie man das abschaltet. Die Anwendung selbst kann das nicht prüfen.',
-  'Die Integritätsprüfung führt der Server selbst durch. Sie schützt vor versehentlichen oder stillen Änderungen, ist aber kein Beweis gegen einen Betreiber, der absichtlich manipuliert. Wer ganz sicher sein will, prüft die Hashes selbst (Anleitung unten) oder lässt die Installation von einer Vertrauensperson anschauen.',
+  'Die Integritätsprüfung führt der Server selbst durch, und sie umfasst nur die Dateien des Repositorys (nicht node_modules, die Node-Laufzeit, das Container-Image oder Startparameter). Sie schützt vor versehentlichen Abweichungen, ist aber kein Beweis gegen einen Betreiber, der absichtlich manipuliert. Auch diese Seite ist eine Selbstauskunft; eine echte Prüfung braucht Zugriff auf den Server oder eine Vertrauensperson.',
   'Mehrfachteilnahme wird nicht technisch verhindert, denn das ginge nur mit Kennungen. Der Hinweis „bereits teilgenommen“ ist eine Erinnerung, keine Sperre.',
-  'Wer den Link hat – auch der Admin – kann selbst mehrfach teilnehmen und so die Mindestzahl künstlich erreichen oder durch den Vergleich zweier Umfragen einzelne Antworten eingrenzen. Die Mindestzahl schützt nur, wenn die Teilnahmen echt sind.',
-  'Bei kleinen Gruppen können schon die Zahlen einer Auswertung Rückschlüsse erlauben. Deshalb gibt es eine Mindestzahl an Teilnahmen.',
 ];
 
 function link(href, text, cls = '') {
@@ -71,8 +79,9 @@ function statusAlert(status, label) {
   const kind = { success: 'alert-success', error: 'alert-error', warn: 'alert-warn' }[label.tone];
   let detail;
   if (status.state === 'identical') {
-    detail = html`Jede Datei dieser Installation hat denselben Git-Hash wie im veröffentlichten Tag
-      ${status.tag}, und es gibt keine zusätzlichen Dateien.`;
+    detail = html`Jede Datei des Repositorys hat in dieser Installation denselben Git-Hash wie im
+      veröffentlichten Tag ${status.tag}, und es gibt keine zusätzlichen Dateien. Nicht geprüft werden
+      node_modules, die Node-Laufzeit, das Container-Image und Startparameter.`;
   } else if (status.state === 'different') {
     detail = html`${status.reason}. Die betroffenen Dateien stehen unten. Das kann eine lokale Anpassung sein,
       eine nicht veröffentlichte Version oder eine Manipulation.`;
@@ -168,8 +177,8 @@ function transparencyPage({ status, baseUrl = '', req = null }) {
       <div class="page-head-text">
         <p class="eyebrow">Version ${status.version}</p>
         <h1 class="page-title">Transparenz</h1>
-        <p class="lead">Hier steht, was diese Anwendung speichert und was nicht, welche Grenzen es gibt und wie
-          sich prüfen lässt, dass hier genau der veröffentlichte Code läuft.</p>
+        <p class="lead">Hier steht, was diese Anwendung speichert und was nicht, welche Grenzen es gibt, was der
+          Server über seinen eigenen Code meldet und wie sich das prüfen lässt.</p>
       </div>
     </div>
 
@@ -218,8 +227,10 @@ function transparencyPage({ status, baseUrl = '', req = null }) {
     <section class="section" aria-labelledby="selbst-pruefen">
       <h2 class="section-title" id="selbst-pruefen">Selbst prüfen</h2>
       <div class="stack">
-        <p>Die Anzeige oben erstellt der Server über sich selbst. Unabhängig davon lässt sich alles mit Git
-          nachrechnen. Git berechnet für jede Datei einen Hash aus ihrem Inhalt
+        <p>Die Anzeige oben und die Dateiliste erstellt der Server über sich selbst. Die Schritte 1 und 2
+          gleichen diese Selbstauskunft mit GitHub ab; ein manipulierter Server könnte dabei einfach die
+          richtigen Hashes melden. Die eigentliche Prüfung ist Schritt 3 und braucht Zugriff auf den Server.
+          Git berechnet für jede Datei einen Hash aus ihrem Inhalt
           (<span class="mono">sha1("blob " + Länge + "\\0" + Inhalt)</span>). Derselbe Inhalt ergibt immer
           denselben Hash, jede Änderung einen anderen.</p>
         <h3>1. Veröffentlichten Code holen</h3>
@@ -281,7 +292,8 @@ function transparencyPage({ status, baseUrl = '', req = null }) {
         zusätzliche Datei. Abgesichert wird er über
         <code>package-lock.json</code>: Diese Datei legt jede Abhängigkeit mit Version und Prüfsumme fest und ist
         Teil des Abgleichs. <code>npm ci</code> installiert genau diese Versionen und bricht ab, wenn eine
-        Prüfsumme nicht stimmt.</p>
+        Prüfsumme nicht stimmt. Das geschieht nur beim Bauen; der laufende Server prüft
+        <code>node_modules</code> nicht.</p>
     </section>`;
 
   return layout({ title: 'Transparenz', body, req, bodyClass: 'page-transparency' });

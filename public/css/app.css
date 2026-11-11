@@ -1935,6 +1935,19 @@ details.disclosure > .disclosure-body {
   color: var(--text-muted);
 }
 
+.survey-code {
+  margin: var(--gap-2) 0 0;
+  padding-left: var(--gap-3);
+  border-left: 2px solid var(--sons-mango);
+  color: var(--text-muted);
+}
+
+.survey-code strong {
+  color: var(--text);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
 .survey-progress {
   margin: 0 0 var(--gap-3);
   text-align: right;

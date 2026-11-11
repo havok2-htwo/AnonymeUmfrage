@@ -6,7 +6,7 @@
 const http = require('node:http');
 const { loadConfig } = require('./config');
 const { openDatabase } = require('./db');
-const { vacuumSafely } = require('./surveys');
+const { vacuumSafely, purgeUnderMinimum } = require('./surveys');
 const auth = require('./auth');
 const integrity = require('./integrity');
 const { version } = require('./version');
@@ -75,7 +75,9 @@ function createRequestHandler({ router, ctx, serveStatic }) {
  */
 async function createApp({ config = loadConfig(), listen = true } = {}) {
   const db = openDatabase(config.dbPath);
-  // Ein VACUUM, das vor dem letzten Beenden fehlgeschlagen ist, nachholen (SPEC §3 Regel 13).
+  // Antworten geschlossener Umfragen unter der Mindestzahl entfernen (auch aus älteren Versionen), dann
+  // ein VACUUM nachholen, das vor dem letzten Beenden fehlgeschlagen ist (SPEC §3 Regel 5, 13).
+  purgeUnderMinimum(db);
   vacuumSafely(db);
   const boot = await bootstrapAdmin(db, config);
   if (boot === 'env') process.stdout.write('Erster Admin aus ADMIN_USER angelegt.\n');

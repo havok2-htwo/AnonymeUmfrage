@@ -323,10 +323,14 @@ test('HTTP: Umfrage bauen, öffnen, anonym teilnehmen, schließen', async (t) =>
   assert.equal((await fetch(`${base}/u/AAAAAAAAAAAAAAAAAAAAAA`)).status, 404);
   assert.equal((await fetch(`${base}/u/kurz`)).status, 404);
 
-  // Übersicht zeigt nur die Anzahl
+  // Solange offen: weder Inhalte noch die Zahl der Teilnahmen (sie verriete den Zeitpunkt jeder Teilnahme)
   const counted = await (await get(surveyPath)).text();
-  assert.match(counted, /<span class="stat-value">3<\/span><span class="stat-label">Teilnahmen/);
+  assert.match(counted, /data-count-hidden><span class="stat-value">–<\/span><span class="stat-label">Teilnahmen/);
+  assert.doesNotMatch(counted, /<span class="stat-value">3<\/span><span class="stat-label">Teilnahmen/);
+  assert.doesNotMatch(counted, /und 3 Teilnahmen/);
   assert.doesNotMatch(counted, /Antwort 0/);
+  const listOpen = await (await get('/admin')).text();
+  assert.match(listOpen, /<td class="num"><span class="muted" title="Die Zahl erscheint erst nach dem Schließen">–<\/span><\/td>/);
 
   // Schließen nur mit Bestätigung
   assert.equal((await post(`${surveyPath}/close`, {})).status, 422);

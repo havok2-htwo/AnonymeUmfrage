@@ -73,12 +73,17 @@ Diese Regeln sind der Kern des Projekts. Jede Abweichung ist ein Fehler.
    gemischt (Fisher-Yates mit `crypto.randomInt`). Sortierung nach ID ist zwar schon zufällig, wird aber
    zusätzlich gemischt.
 4. **Zähler statt Teilnahmeliste.** Pro Umfrage gibt es nur `response_count` (eine Zahl).
-5. **Ergebnisse erst nach Abschluss.** Solange eine Umfrage offen ist, sieht der Adminbereich nur die Anzahl der
-   Teilnahmen, keine Inhalte. Auswertung und PDF gibt es erst, wenn die Umfrage geschlossen ist **und**
-   mindestens `min_responses` Teilnahmen vorliegen (Standard 3, minimal 2, pro Umfrage einstellbar, nur im
-   Entwurf änderbar). Eine Teilnahme ohne eine einzige Antwort wird abgelehnt (`422`, „Bitte mindestens eine
-   Frage beantworten.“) und nicht gezählt; sonst ließe sich die Mindestzahl mit leeren Teilnahmen erreichen
-   und die übrigen Antworten wären einer Person zuzuordnen.
+5. **Ergebnisse erst nach Abschluss.** Solange eine Umfrage offen ist, zeigt der Adminbereich keine Inhalte
+   und auch nicht die Zahl der Teilnahmen (weder in der Übersicht noch in der Liste noch beim Löschen); eine
+   laufend sichtbare Zahl verriete den Zeitpunkt jeder Teilnahme und wäre der Auslöser, um eine einzelne
+   Teilnahme mit eigenen Teilnahmen zu isolieren. Auswertung und PDF gibt es erst, wenn die Umfrage
+   geschlossen ist **und** mindestens `min_responses` Teilnahmen vorliegen (Standard 3, minimal 2, pro
+   Umfrage einstellbar, nur im Entwurf änderbar). Ist `min_responses` keine ganze Zahl ab 2, bleibt die
+   Auswertung gesperrt. Eine Teilnahme ohne eine einzige Antwort wird abgelehnt (`422`, „Bitte mindestens
+   eine Frage beantworten.“) und nicht gezählt; sonst ließe sich die Mindestzahl mit leeren Teilnahmen
+   erreichen und die übrigen Antworten wären einer Person zuzuordnen. Wird eine Umfrage mit weniger als
+   `min_responses` Teilnahmen geschlossen (von Hand oder automatisch), werden ihre Antworten in derselben
+   Aktion gelöscht; `response_count` bleibt erhalten. Der Start holt das für ältere Datenbanken nach.
 6. **Schließen ist endgültig.** Eine geschlossene Umfrage kann nicht wieder geöffnet werden. Sonst könnte man
    nach dem Ansehen wieder öffnen, eine einzelne neue Antwort abwarten und sie durch Vergleich zuordnen. Wer
    weitermachen will, dupliziert die Umfrage.
@@ -96,8 +101,8 @@ Diese Regeln sind der Kern des Projekts. Jede Abweichung ist ein Fehler.
    `/admin`). Die öffentliche Seite setzt und liest keine Cookies.
 10. **Hinweis „bereits teilgenommen“ nur lokal.** Nach dem Absenden merkt sich der Browser per `localStorage`
     (`umfrage:done:<slug>`), dass auf diesem Gerät teilgenommen wurde, und zeigt beim nächsten Aufruf einen
-    Hinweis mit der Möglichkeit, trotzdem erneut zu antworten (geteilte Geräte). Diese Information verlässt den
-    Browser nie. Ohne JavaScript gibt es den Hinweis nicht.
+    Hinweis mit der Möglichkeit, trotzdem erneut zu antworten (geteilte Geräte). Die Anwendung sendet diese
+    Information nie; sie bleibt im Browser. Ohne JavaScript gibt es den Hinweis nicht.
 11. **Absenden ist atomar.** Alle Antworten einer Teilnahme und die Erhöhung des Zählers passieren in einer
     Transaktion. Bei einem Validierungsfehler wird nichts gespeichert, das Formular wird mit den eingegebenen
     Werten und Fehlermeldungen erneut angezeigt.
@@ -109,27 +114,66 @@ Diese Regeln sind der Kern des Projekts. Jede Abweichung ist ein Fehler.
 13. **Keine Spuren in der Datenbankdatei.** SQLite legt Datensätze innerhalb einer Seite in Einfügereihenfolge ab;
     wer die Datei roh ausliest, könnte daraus Antworten derselben Teilnahme wieder zusammensetzen. Deshalb:
     `PRAGMA journal_mode = DELETE`, `PRAGMA secure_delete = ON`, und nach jeder Teilnahme `VACUUM`. `VACUUM`
-    schreibt die Datenbank neu, Datensätze liegen danach nach ihrer zufälligen ID geordnet. Das Rollback-Journal
-    wird dabei gelöscht. (Datensicherungen, die zwischen Einfügen und `VACUUM` entstehen, sind außerhalb
-    dieser Garantie; das Zeitfenster sind Millisekunden.) Schlägt `VACUUM` fehl (z. B. `SQLITE_BUSY`,
+    schreibt die Datenbank neu, Datensätze liegen danach nach ihrer zufälligen ID geordnet. Die Garantie gilt
+    für eine einzelne Kopie der Datenbankdatei. Außerhalb liegen: (a) jeder Vergleich zweier Kopien, die
+    während der Laufzeit einer Umfrage entstehen (Datensicherungen, Snapshots) – die Differenz enthält genau
+    die Antwortzeilen der Teilnahmen dazwischen; (b) das Rollback-Journal: SQLite löscht es nach jeder
+    Transaktion, überschreibt es aber nicht. Beim `VACUUM` enthält es die ganze Datei vor der Neuordnung,
+    beim Löschen einer Umfrage deren Antworten; auf Blockebene lässt es sich unter Umständen wiederherstellen
+    (die temporäre Datenbank des `VACUUM` bleibt dank `PRAGMA temp_store = MEMORY` im Arbeitsspeicher);
+    (c) Kopien zwischen Einfügen und `VACUUM`. Das Fenster sind bei üblicher Größe Millisekunden, es wächst
+    mit der Größe der Datenbank. Steht ein `VACUUM` aus, macht schon eine einzelne Kopie die Teilnahmen
+    seit dem letzten erfolgreichen `VACUUM` verknüpfbar. Die README nennt die Betriebsregeln dazu
+    („Datensicherung und Zugriff auf den Server“). Schlägt `VACUUM` fehl (z. B. `SQLITE_BUSY`,
     `SQLITE_FULL`), wird nur der Fehlercode auf stderr gemeldet (`[warnung] VACUUM fehlgeschlagen (…)`, keine
     Daten) und das `VACUUM` vorgemerkt. Nachgeholt wird bei der nächsten Teilnahme, beim Schließen (von Hand
-    und automatisch), beim Start und im Minutentakt; die Übersicht im Adminbereich zeigt
-    „Datenbank-Neuordnung ausstehend“.
+    und automatisch), beim Start und im Minutentakt; die Übersicht einer geschlossenen Umfrage zeigt
+    „Datenbank-Neuordnung ausstehend“ (ohne Bezug zu einer Teilnahme; bei offenen Umfragen gar nicht, weil das
+    Erscheinen des Hinweises sonst den Zeitpunkt einer Teilnahme verriete).
+14. **Umfrage-Code.** Die Teilnahmeseite (auch in der Vorschau), die Seite „Diese Umfrage ist abgeschlossen“ und
+    die Admin-Übersicht zeigen einen Code aus 12 Zeichen (Crockford-Base32, 60 Bit aus
+    `sha256("anonyme-umfrage:code:" + slug)`, Format `XXXX-XXXX-XXXX`) direkt unter dem Titel, vor dem
+    Einleitungstext, mit der Aufforderung, ihn untereinander zu vergleichen. Bekommt jede Person einen eigenen
+    Link, sehen alle verschiedene Codes. Der Code verrät den Slug nicht und lässt sich nicht wählen; 60 Bit,
+    damit sich auch durch massenhaftes Anlegen kein Paar von Umfragen mit gleichem Code finden lässt.
+15. **Formular nach dem Absenden leeren.** `public/js/survey.js` leert das Formular nach dem Absenden
+    (`pagehide`), bei Rückkehr aus dem Back-Forward-Cache (`pageshow`) und bei Zurück/Vor, wenn auf dem Gerät
+    schon teilgenommen wurde und im Tab kein neuer Durchgang („Trotzdem erneut ausfüllen“, `sessionStorage`
+    `umfrage:retake:<slug>`) läuft. Der Server liefert das Formular mit `autocomplete="off"` (Schutz ohne
+    JavaScript); das Skript entfernt das Attribut, solange auf dem Gerät noch nicht teilgenommen wurde oder ein
+    neuer Durchgang läuft, damit halb ausgefüllte Antworten beim Zurück erhalten bleiben. Chrome und Edge legen
+    die Seite trotz `Cache-Control: no-store` in den Back-Forward-Cache; ohne das Leeren zeigt „Zurück“ die
+    eigenen Antworten. Ohne JavaScript bleibt das bei aktivem Back-Forward-Cache möglich.
 
-Grenzen, die offen benannt werden (Transparenzseite):
+Grenzen, die offen benannt werden (Transparenzseite und `docs/ANONYMITAET.md`):
 
+- Wer den Server betreibt, dem muss man vertrauen: Wer ihn kontrolliert, kann die Anwendung absichtlich
+  verändern und alles mitlesen.
+- Wer den Link hat – auch wer die Umfrage verwaltet – kann selbst mehrfach teilnehmen. Mit so vielen eigenen Teilnahmen, dass
+  zusammen mit einer echten die Mindestzahl erreicht ist, und sofortigem Schließen ergeben Auswertung minus
+  eigene Antworten alle Antworten dieser einen Person, verknüpft über alle Fragen. Ohne Kennungen ist das
+  nicht zu verhindern; die verborgene Zahl (Regel 5) nimmt nur den Auslöser.
+- Ein eigener Link (eine eigene Umfrage) pro Person hebt die Anonymität auf. Erkennbar ist das am
+  Umfrage-Code (Regel 14), wenn Teilnehmende ihn vergleichen. Zwei fast gleiche Umfragen an leicht
+  verschiedene Gruppen lassen sich vergleichen und grenzen einzelne Antworten ein; das erkennt der Code nicht.
+- Kopien der Datenbankdatei zu zwei Zeitpunkten und forensisch wiederhergestellte Journale (Regel 13).
 - Freitexte können über Schreibstil oder Inhalt Rückschlüsse erlauben. Das kann keine Technik verhindern.
+  Schreibhilfen von Browser, Erweiterungen oder Tastatur können Text an Dritte senden.
+- Die Mindestzahl gilt pro Frage, nicht pro Option: Zählwerte von 1 oder einheitliche Antworten können in
+  kleinen Gruppen Teilnahme oder Antworten einzelner verraten; wird eine Auswertung in einer sehr kleinen
+  Gruppe geteilt, können Teilnehmende durch Abziehen der eigenen Antworten auf die anderen schließen.
+- Spuren auf dem Gerät: Browserverlauf mit `/u/<slug>/danke`, der lokale Hinweis aus 10.
+- Netzwerk: TLS-aufbrechende Proxys lesen mit; die Größe des Absende-Requests verrät die Länge von
+  Freitexten; Antwortzeiten verraten, wann jemand teilnimmt.
 - Ein vorgeschalteter Webserver (z. B. nginx) könnte IP-Adressen protokollieren. Die Installationsanleitung
   zeigt, wie man das für diese Anwendung abschaltet. Die Anwendung selbst kann das nicht prüfen.
-- Die Integritätsprüfung wird vom Server selbst durchgeführt. Sie schützt vor versehentlichen oder stillen
-  Änderungen, ist aber kein Beweis gegen einen Betreiber, der absichtlich manipuliert. Wer ganz sicher sein
-  will, prüft die Hashes selbst (siehe 6.) oder lässt die Installation von einer Vertrauensperson anschauen.
+- Die Integritätsprüfung wird vom Server selbst durchgeführt und deckt nur die Dateien des Repositorys ab
+  (nicht `node_modules`, Node-Laufzeit, Container-Image, Startparameter). Sie schützt vor versehentlichen
+  Abweichungen, ist aber kein Beweis gegen einen Betreiber, der absichtlich manipuliert. Auch `/transparenz`
+  ist eine Selbstauskunft; eine echte Prüfung braucht Zugriff auf den Server (siehe 6.) oder eine
+  Vertrauensperson.
 - Mehrfachteilnahme wird nicht technisch verhindert (das ginge nur mit Kennungen). Der Hinweis in 10. ist eine
   Erinnerung, keine Sperre.
-- Wer den Link hat – auch der Admin – kann selbst mehrfach teilnehmen und so die Mindestzahl künstlich
-  erreichen oder durch den Vergleich zweier Umfragen einzelne Antworten eingrenzen. Die Mindestzahl schützt
-  nur, wenn die Teilnahmen echt sind.
 
 ## 4. Datenmodell (SQLite)
 
@@ -261,25 +305,30 @@ Die Reihenfolge der Fragen ist fest (1, 2, 3 …). Die Reihenfolge der Antwortop
 - `GET /` – kurze Startseite: was das Tool ist, Link zur Transparenzseite, Link zum Adminbereich. Keine Liste
   von Umfragen.
 - `GET /u/:slug` – Umfrage ausfüllen. Status `draft` → 404 (keine Bestätigung, dass es den Link gibt).
-  `closed` → Seite „Diese Umfrage ist abgeschlossen“. Oben Titel, Einleitung, Anonymitätshinweis
-  (kurz, mit Link zur Transparenzseite), dann alle Fragen nummeriert, Pflichtfragen markiert.
+  `closed` → Seite „Diese Umfrage ist abgeschlossen“ (mit Umfrage-Code). Oben Titel, Umfrage-Code (§3 Regel 14),
+  Einleitung, Anonymitätshinweis (kurz, mit Link zur Transparenzseite), dann alle Fragen nummeriert,
+  Pflichtfragen markiert.
 - `POST /u/:slug` – Antworten absenden. Formularfelder `q<questionId>` (bei multi mehrfach). Erfolgreich →
   `303` auf `/u/:slug/danke`. Validierungsfehler → `422` mit Formular und Fehlern.
   Kein CSRF-Token (keine Sitzung vorhanden, nichts zu schützen außer Spam). Body-Limit 256 KB.
-- `GET /u/:slug/danke` – Dankeseite mit `thanks`-Text; setzt per JS den localStorage-Hinweis.
+- `GET /u/:slug/danke` – Dankeseite mit `thanks`-Text; setzt per JS den localStorage-Hinweis; Hinweis, auf
+  geteilten Geräten den Tab zu schließen und dass Verlauf und Hinweis trotzdem bleiben.
 - `GET /transparenz`, `GET /transparenz.json`.
 
 ### Admin (`/admin`)
 
 - `GET/POST /admin/login`, `POST /admin/logout`.
-- `GET /admin` – Liste der Umfragen (Titel, Status, Teilnahmen, erstellt von, Aktionen).
+- `GET /admin` – Liste der Umfragen (Titel, Status, Teilnahmen – bei offenen Umfragen „–“, siehe §3 Regel 5 –,
+  erstellt von, Aktionen).
 - `POST /admin/surveys` – neue Umfrage (Entwurf) → Editor.
-- `GET /admin/surveys/:id` – Editor (Entwurf) bzw. Übersicht (offen/geschlossen) mit Link zum Kopieren.
+- `GET /admin/surveys/:id` – Editor (Entwurf) bzw. Übersicht (offen/geschlossen) mit Link zum Kopieren und
+  Umfrage-Code; Teilnahmen bei offenen Umfragen „–“.
 - `POST /admin/surveys/:id` – Stammdaten speichern (Entwurf).
 - `POST /admin/surveys/:id/questions` – Frage hinzufügen; `POST /admin/surveys/:id/questions/:qid` –
   bearbeiten; `.../delete`; `.../move` (`direction=up|down`).
 - `POST /admin/surveys/:id/open` – öffnen (mindestens eine Frage nötig).
-- `POST /admin/surveys/:id/close` – schließen (mit Bestätigung, Hinweis „endgültig“).
+- `POST /admin/surveys/:id/close` – schließen (mit Bestätigung, Hinweis „endgültig“ und dass unter
+  `min_responses` alle Antworten gelöscht werden).
 - `POST /admin/surveys/:id/duplicate` – Kopie als Entwurf (neue Slug, keine Antworten).
 - `POST /admin/surveys/:id/delete` – löschen (mit Bestätigung durch Eintippen des Titels oder „löschen“).
 - `GET /admin/surveys/:id/preview` – Vorschau des Formulars (ohne Absenden).

@@ -209,8 +209,9 @@ test('Ende-zu-Ende: bauen, öffnen, drei Teilnahmen, schließen, Auswertung und 
   assert.equal(app.db.prepare('SELECT response_count AS n FROM surveys WHERE slug = ?').get(slug).n, 3);
   assert.equal(app.db.prepare('PRAGMA journal_mode').get().journal_mode, 'delete');
 
-  // Solange offen: nur die Anzahl, keine Inhalte
+  // Solange offen: weder Inhalte noch die Zahl der Teilnahmen
   const openView = await (await admin.get(surveyPath)).text();
+  assert.match(openView, /data-count-hidden/);
   assert.doesNotMatch(openView, /Hilfsbereit/);
   const lockedHtml = await admin.get(`${surveyPath}/results`);
   assert.equal(lockedHtml.status, 200);

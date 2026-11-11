@@ -6,6 +6,7 @@
 
 const { html, raw, classes, paragraphs, when } = require('./html');
 const { layout } = require('./layout');
+const { surveyCode } = require('../surveys');
 
 const ANON_NOTICE = 'Anonym: keine Anmeldung, keine Cookies, keine IP-Speicherung. Antworten werden je Frage getrennt gespeichert.';
 
@@ -111,10 +112,22 @@ function errorSummary(questions, errors) {
     </div>`;
 }
 
+/**
+ * Umfrage-Code mit Aufforderung zum Vergleichen. Bekommt jede Person einen eigenen Link (eigene Umfrage),
+ * sehen alle verschiedene Codes – das kann die Software nicht verhindern, aber so wird es erkennbar.
+ */
+function codeNotice(survey) {
+  return html`<p class="survey-code small">Umfrage-Code: <strong class="mono">${surveyCode(survey.slug)}</strong>.
+        Alle Eingeladenen sehen denselben Code (hier, direkt unter dem Titel; ein Code im Einleitungstext zählt nicht).
+        Vergleicht ihn untereinander: Wer einen anderen Code sieht, hat einen eigenen Link bekommen, und dann ist die
+        Umfrage für diese Person nicht anonym.</p>`;
+}
+
 function surveyHead(survey) {
   return html`
     <header class="survey-head">
       <h1 class="page-title">${survey.title}</h1>
+      ${codeNotice(survey)}
       ${when(survey.intro, () => html`<div class="lead survey-intro">${paragraphs(survey.intro)}</div>`)}
       <p class="survey-anon small">${ANON_NOTICE} <a href="/transparenz">Mehr zur Anonymität</a></p>
     </header>`;
@@ -159,7 +172,7 @@ function surveyFormPage({ survey, questions, errors = {}, values = {}, preview =
     <p class="survey-progress small muted" hidden data-progress aria-live="polite"></p>
     ${preview
     ? html`<div class="survey-form">${inner}</div>`
-    : html`<form method="post" action="/u/${survey.slug}" class="form survey-form" id="umfrage" accept-charset="utf-8">${inner}</form>`}`;
+    : html`<form method="post" action="/u/${survey.slug}" class="form survey-form" id="umfrage" accept-charset="utf-8" autocomplete="off">${inner}</form>`}`;
 
   return layout({
     title: preview ? `Vorschau: ${survey.title}` : survey.title,
@@ -176,6 +189,7 @@ function closedPage(survey) {
     <section class="panel message-panel message-info">
       <h1 class="page-title">Diese Umfrage ist abgeschlossen</h1>
       <p class="lead">„${survey.title}“ nimmt keine Antworten mehr an. Danke für das Interesse.</p>
+      ${codeNotice(survey)}
       <p class="muted small"><a href="/transparenz">So funktioniert die Anonymität</a></p>
     </section>`;
   return layout({ title: 'Umfrage abgeschlossen', body, width: 'narrow' });
@@ -190,6 +204,9 @@ function thanksPage(survey) {
     : html`<p class="lead">Die Antworten wurden anonym gespeichert.</p>`}
       <p class="muted small">Gespeichert wurden nur die Antworten selbst, je Frage getrennt und ohne Zeitpunkt, IP-Adresse oder Kennung.
         <a href="/transparenz">Mehr zur Anonymität</a></p>
+      <p class="muted small">Auf einem geteilten Gerät: Tab jetzt schließen, damit niemand mit „Zurück“ hierher kommt.
+        Der Browserverlauf und der Hinweis „bereits teilgenommen“ bleiben trotzdem auf dem Gerät. Spurlos geht es nur in
+        einem privaten Fenster, das danach geschlossen wird.</p>
     </section>`;
   return layout({ title: 'Danke', body, width: 'narrow', scripts: ['/js/survey.js'] });
 }

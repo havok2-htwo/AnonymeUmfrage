@@ -7,7 +7,7 @@
 const { html, raw, classes, when, paragraphs, formatDate, formatDateTime, formatNumber } = require('./html');
 const { flash, statusBadge, field, formErrors } = require('./admin');
 const {
-  TYPES, TYPE_LABELS, LIMITS, TEXT_DEFAULTS, TEXT_MAX, formatLocalDateTime, questionFormValues,
+  TYPES, TYPE_LABELS, LIMITS, TEXT_DEFAULTS, TEXT_MAX, formatLocalDateTime, questionFormValues, surveyCode,
 } = require('../surveys');
 
 const EMPTY_QUESTION = {
@@ -193,7 +193,7 @@ function deletePanel({ req, csrfField, survey, state }) {
       <summary>Umfrage löschen</summary>
       <div class="confirm-body">
         <div class="confirm-panel">
-          <p class="mt-0">Löscht die Umfrage mit allen Fragen${survey.response_count ? ` und ${formatNumber(survey.response_count)} Teilnahmen` : ''} unwiderruflich.</p>
+          <p class="mt-0">Löscht die Umfrage mit allen Fragen${survey.status === 'open' ? ' und Antworten' : survey.response_count ? ` und ${formatNumber(survey.response_count)} Teilnahmen` : ''} unwiderruflich.</p>
           <form method="post" action="/admin/surveys/${survey.id}/delete" class="form" data-delete-form>
             ${csrfField(req)}
             ${field({
@@ -287,7 +287,7 @@ function resultsPanel(survey, results) {
     <div class="alert alert-warn">
       <strong class="alert-title">Ergebnisse gesperrt</strong>
       ${results.reason}
-      ${when(survey.status === 'open', () => html` Bis dahin ist nur die Anzahl der Teilnahmen sichtbar.`)}
+      ${when(survey.status === 'open', () => html` Bis dahin ist auch die Zahl der Teilnahmen nicht sichtbar. Eine laufend sichtbare Zahl würde verraten, wann jemand teilgenommen hat.`)}
     </div>`;
 }
 
@@ -310,7 +310,10 @@ function overviewBody({ req, csrfField, survey, questions, notice, link, results
     ${actionError(state)}
 
     <div class="stats mb-6">
-      <div class="stat"><span class="stat-value">${formatNumber(survey.response_count)}</span><span class="stat-label">Teilnahmen</span></div>
+      ${isOpen
+    ? html`<div class="stat" data-count-hidden><span class="stat-value">–</span><span class="stat-label">Teilnahmen (Zahl erst nach dem Schließen)</span></div>`
+    : html`<div class="stat"><span class="stat-value">${formatNumber(survey.response_count)}</span><span class="stat-label">Teilnahmen</span></div>`}
+      <div class="stat"><span class="stat-value mono">${surveyCode(survey.slug)}</span><span class="stat-label">Umfrage-Code (sehen alle Teilnehmenden)</span></div>
       <div class="stat"><span class="stat-value">${formatNumber(questions.length)}</span><span class="stat-label">Fragen</span></div>
       <div class="stat"><span class="stat-value">${formatNumber(survey.min_responses)}</span><span class="stat-label">Mindestanzahl für Ergebnisse</span></div>
     </div>
@@ -318,7 +321,9 @@ function overviewBody({ req, csrfField, survey, questions, notice, link, results
     ${when(isOpen, () => html`
     <section class="panel mb-4" aria-labelledby="link-titel">
       <h2 class="panel-title" id="link-titel">Link zum Teilen</h2>
-      <p class="muted">Wer diesen Link hat, kann anonym teilnehmen. Am besten per E-Mail oder Chat an alle Teilnehmenden schicken.</p>
+      <p class="muted">Wer diesen Link hat, kann anonym teilnehmen. Am besten über einen Weg verschicken, den alle sehen
+        (Gruppenmail, Teamchat oder Aushang). Die Teilnahmeseite zeigt den Umfrage-Code ${surveyCode(survey.slug)}; alle
+        Teilnehmenden sollten denselben sehen.</p>
       <div class="copy-field">
         <input class="input" type="text" readonly value="${link}" id="umfrage-link" aria-label="Link zur Umfrage">
         <button type="button" class="btn btn-secondary" data-copy="umfrage-link" hidden>Link kopieren</button>
@@ -327,10 +332,10 @@ function overviewBody({ req, csrfField, survey, questions, notice, link, results
 
     ${when(isOpen, () => html`
     <p class="hint mb-4">Eigene Testteilnahmen über den Link zählen mit. Wer selbst teilnimmt, um die Mindestzahl zu erreichen, hebt die Anonymität der übrigen Antworten auf. Zum Ausprobieren die Vorschau verwenden.</p>`)}
-    ${when(state.vacuumPending, () => html`
+    ${when(state.vacuumPending && !isOpen, () => html`
     <div class="alert alert-warn mb-4">
       <strong class="alert-title">Datenbank-Neuordnung ausstehend</strong>
-      Das Neuschreiben der Datenbank (VACUUM) nach der letzten Teilnahme ist fehlgeschlagen und wird automatisch nachgeholt.
+      Ein Neuschreiben der Datenbank (VACUUM) ist fehlgeschlagen und wird automatisch nachgeholt.
     </div>`)}
 
     <section class="mb-4">${resultsPanel(survey, results)}</section>
@@ -380,6 +385,8 @@ function overviewBody({ req, csrfField, survey, questions, notice, link, results
             <p class="mt-0"><strong>Schließen ist endgültig.</strong> Danach sind keine Antworten mehr möglich und die Umfrage
               kann nicht wieder geöffnet werden. So lässt sich keine einzelne spätere Antwort einer Person zuordnen.
               Wer weitermachen will, dupliziert die Umfrage.</p>
+            <p>Liegen beim Schließen weniger als ${formatNumber(survey.min_responses)} Teilnahmen vor, werden alle Antworten
+              sofort gelöscht. Sie könnten ohnehin nie ausgewertet werden.</p>
             <form method="post" action="/admin/surveys/${survey.id}/close" class="form">
               ${csrfField(req)}
               <label class="check check-plain"><input type="checkbox" name="confirm" value="ja" required><span class="check-label">Ich habe verstanden, dass das Schließen endgültig ist.</span></label>

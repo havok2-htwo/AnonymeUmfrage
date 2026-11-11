@@ -110,6 +110,33 @@ function newSlug() {
   return crypto.randomBytes(16).toString('base64url');
 }
 
+const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // Crockford-Base32, ohne I, L, O, U
+
+/**
+ * Kurzer, vergleichbarer Code einer Umfrage, z. B. „7K3M-Q9TD-4WXA“ (60 Bit aus sha256 des Slugs).
+ * Teilnehmende vergleichen ihn untereinander: Wer einen anderen Code sieht, hat einen eigenen Link
+ * bekommen. Der Code verrät den Slug nicht, und wer die Umfrage verwaltet, kann ihn nicht wählen. 60 Bit,
+ * damit sich auch durch massenhaftes Anlegen kein Paar von Umfragen mit gleichem Code finden lässt
+ * (Geburtstagsschranke etwa 2^30 Umfragen).
+ */
+function surveyCode(slug) {
+  const digest = crypto.createHash('sha256').update(`anonyme-umfrage:code:${String(slug || '')}`).digest();
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of digest) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5 && out.length < 12) {
+      bits -= 5;
+      out += CODE_ALPHABET[(value >> bits) & 31];
+    }
+    value &= (1 << bits) - 1;
+    if (out.length === 12) break;
+  }
+  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
+}
+
 function newOptionId(taken) {
   for (;;) {
     const id = crypto.randomBytes(3).toString('hex');
@@ -182,16 +209,51 @@ const CLOSE_DUE_SQL = "UPDATE surveys SET status = 'closed', "
   + "closed_at = strftime('%Y-%m-%dT%H:%M:%fZ', closes_at, 'unixepoch') "
   + "WHERE status = 'open' AND closes_at IS NOT NULL AND closes_at <= ?";
 
+// Antworten geschlossener Umfragen unter der Mindestzahl sind nie mehr abrufbar (Schließen ist endgültig).
+// Gerade sie wären aus der Datei am leichtesten einer Person zuzuordnen; deshalb werden sie gelöscht.
+// Der Zähler bleibt als Information erhalten.
+const PURGE_UNDER_MIN_SQL = 'DELETE FROM answers WHERE question_id IN ('
+  + 'SELECT q.id FROM questions q JOIN surveys s ON s.id = q.survey_id '
+  + "WHERE s.status = 'closed' AND s.response_count < s.min_responses)";
+
+/** Löscht die Antworten aller geschlossenen Umfragen unter der Mindestzahl. Gibt die Zahl der Zeilen zurück. */
+function purgeUnderMinimum(db) {
+  return Number(db.prepare(PURGE_UNDER_MIN_SQL).run().changes);
+}
+
+/**
+ * Löschen ohne Ausnahme nach außen: Schlägt es fehl (volle Platte, fremde Sperre), holen der Minutentakt
+ * (startAutoClose) und der Start es nach. Kein Log, denn eine Zeile im Moment des Schließens verriete nichts,
+ * eine im Moment einer Teilnahme aber schon.
+ */
+function purgeSafely(db) {
+  try {
+    purgeUnderMinimum(db);
+  } catch {
+    // nachgeholt im Minutentakt
+  }
+}
+
+// getSurvey() ruft closeIfDue() bei jedem Zugriff auf. Deshalb hier keine Schreibtransaktion auf Verdacht:
+// Nur wenn wirklich geschlossen wurde, wird gelöscht. Bricht der Prozess dazwischen ab oder scheitert das
+// Löschen, holen Minutentakt und Start (src/server.js) es nach.
+
 /** Schließt alle offenen Umfragen, deren Schließzeitpunkt erreicht ist. Gibt die Anzahl zurück. */
 function closeDueSurveys(db, now = nowSec()) {
   const changes = Number(db.prepare(CLOSE_DUE_SQL).run(now).changes);
-  if (changes > 0) vacuumSafely(db);
+  if (changes > 0) {
+    purgeSafely(db);
+    vacuumSafely(db);
+  }
   return changes;
 }
 
 function closeIfDue(db, id, now = nowSec()) {
   const changes = Number(db.prepare(`${CLOSE_DUE_SQL} AND id = ?`).run(now, id).changes);
-  if (changes > 0) vacuumSafely(db);
+  if (changes > 0) {
+    purgeSafely(db);
+    vacuumSafely(db);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +305,8 @@ function startAutoClose(db, intervalMs = 60 * 1000) {
         return;
       }
       closeDueSurveys(db);
+      // Ein fehlgeschlagenes Löschen unter der Mindestzahl nachholen. Ohne Treffer ändert das DELETE nichts.
+      if (purgeUnderMinimum(db) > 0) vacuumSafely(db);
       if (vacuumPending.has(db)) vacuumSafely(db);
     } catch {
       // Datenbank geschlossen oder gesperrt: still beenden bzw. beim nächsten Takt erneut versuchen.
@@ -313,10 +377,16 @@ function resultsAvailable(survey) {
   }
   const n = Number(survey.response_count);
   const min = Number(survey.min_responses);
+  // Sicher fehlschlagen: Ist min keine ganze Zahl ab der Untergrenze (fehlt, null, Text …), bleibt gesperrt.
+  if (survey.min_responses === null || survey.min_responses === undefined
+    || !(Number.isInteger(min) && min >= LIMITS.minResponses)) {
+    return { ok: false, reason: 'Die Mindestzahl dieser Umfrage ist ungültig. Zum Schutz der Anonymität bleiben die Ergebnisse gesperrt.' };
+  }
+  if (n === 0) return { ok: false, reason: 'Es gab keine Teilnahmen.' };
   if (n < min) {
     return {
       ok: false,
-      reason: `Es liegen ${n} von mindestens ${min} nötigen Teilnahmen vor. Zum Schutz der Anonymität bleiben die Ergebnisse gesperrt.`,
+      reason: `Es liegen ${n} von mindestens ${min} nötigen Teilnahmen vor. Zum Schutz der Anonymität bleiben die Ergebnisse gesperrt; die Antworten wurden beim Schließen gelöscht.`,
     };
   }
   return { ok: true, reason: '' };
@@ -458,7 +528,10 @@ function closeSurvey(db, id) {
   const survey = requireSurvey(db, id);
   if (survey.status === 'draft') throw new SurveyError('Ein Entwurf kann nicht geschlossen werden.');
   if (survey.status === 'closed') throw new SurveyError('Die Umfrage ist bereits geschlossen.');
-  db.prepare("UPDATE surveys SET status = 'closed', closed_at = ? WHERE id = ? AND status = 'open'").run(nowIso(), survey.id);
+  transaction(db, () => {
+    db.prepare("UPDATE surveys SET status = 'closed', closed_at = ? WHERE id = ? AND status = 'open'").run(nowIso(), survey.id);
+    purgeUnderMinimum(db);
+  });
   vacuumSafely(db); // Regel 13 auch dann sicherstellen, wenn ein VACUUM nach einer Teilnahme fehlschlug
 }
 
@@ -833,6 +906,8 @@ module.exports = {
   parseLocalDateTime,
   formatLocalDateTime,
   closeDueSurveys,
+  purgeUnderMinimum,
+  surveyCode,
   startAutoClose,
   vacuumSafely,
   isVacuumPending,

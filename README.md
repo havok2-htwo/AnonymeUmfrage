@@ -16,17 +16,25 @@ zeigt die Versionsnummer und ob der laufende Code mit dem veröffentlichten Git-
 
 - Beim Absenden werden **keine** IP-Adresse, kein Browser, kein Cookie, kein Zeitpunkt und keine Kennung
   gespeichert oder protokolliert. Die Anwendung schreibt kein Access-Log.
-- Jede einzelne Antwort ist eine eigene Datenbankzeile mit zufälliger ID. Es gibt nichts, was die Antworten
-  einer Person auf verschiedene Fragen miteinander verbindet; nach jeder Teilnahme wird die Datenbankdatei
-  neu geschrieben (`VACUUM`), damit auch die Speicherreihenfolge nichts verrät.
+- Jede einzelne Antwort ist eine eigene Datenbankzeile mit zufälliger ID. In der Datenbank gibt es nichts,
+  was die Antworten einer Person auf verschiedene Fragen miteinander verbindet; nach jeder Teilnahme wird
+  die Datenbankdatei neu geschrieben (`VACUUM`), damit auch die Speicherreihenfolge nichts verrät. Zwei
+  Kopien der Datei zu verschiedenen Zeitpunkten verraten aber, was dazwischen dazukam (siehe
+  „Datensicherung und Zugriff auf den Server“).
 - Freitexte und Antworten werden in Auswertung und PDF bei jedem Abruf neu gemischt.
 - Ergebnisse gibt es erst, wenn die Umfrage geschlossen ist und eine Mindestzahl an Teilnahmen erreicht ist
-  (Standard 3). Schließen ist endgültig; Fragen sind nach dem Öffnen eingefroren.
+  (Standard 3). Bis zum Schließen zeigt der Adminbereich nicht einmal die Zahl der Teilnahmen. Wird die
+  Mindestzahl nicht erreicht, werden die Antworten beim Schließen gelöscht. Schließen ist endgültig; Fragen
+  sind nach dem Öffnen eingefroren.
+- Jede Teilnahmeseite zeigt einen Umfrage-Code. Teilnehmende vergleichen ihn und erkennen so, ob jemand
+  einen eigenen Link bekommen hat.
 - Keine Drittanbieter: keine CDN, keine externen Schriften, keine Analyse. Strenge Sicherheitsheader (CSP).
 
-Die ehrlich benannten Grenzen (Schreibstil in Freitexten, Webserver-Logs davor, Prüfung durch den Server
-selbst, keine Sperre gegen Mehrfachteilnahme) stehen in [`docs/ANONYMITAET.md`](docs/ANONYMITAET.md) und auf
-`/transparenz`.
+Die ehrlich benannten Grenzen stehen in [`docs/ANONYMITAET.md`](docs/ANONYMITAET.md) und auf `/transparenz`:
+Vertrauen in den Betrieb des Servers, zusätzliche Teilnahmen der verwaltenden Person, eigene Links pro Person
+und der Vergleich zweier fast gleicher Umfragen, Kopien und
+Sicherungen der Datenbank, Schreibstil in Freitexten, kleine Gruppen, Spuren auf dem Gerät, das Netzwerk und
+Webserver-Logs davor, keine Sperre gegen Mehrfachteilnahme.
 
 ## Voraussetzungen
 
@@ -115,6 +123,33 @@ Weitere Admins lassen sich danach im Adminbereich unter „Admins“ anlegen und
 | `ADMIN_USER`, `ADMIN_PASSWORD` | leer | legt beim Start einen Admin an, falls noch keiner existiert (sonst admin/admin mit Pflicht zum Passwortwechsel) |
 | `SESSION_HOURS` | `12` | Dauer einer Admin-Sitzung |
 
+## Datensicherung und Zugriff auf den Server
+
+Die Antworten liegen in `DATA_DIR/umfrage.db` (Docker: Volume `umfrage-daten`). Innerhalb der Datei hängen
+sie nicht zusammen. Wer aber zwei Stände der Datei vergleicht, sieht genau die Antworten, die dazwischen
+dazugekommen sind; bei nur einer Teilnahme im Zeitraum also alle Antworten dieser Person samt ungefährem
+Zeitpunkt. Außerdem stehen in der Datei die Antworten offener Umfragen im Klartext.
+
+- Solange eine Umfrage offen ist: keine laufenden Datensicherungen, Snapshots (Volume, VM, ZFS/btrfs) oder
+  Kopien von `DATA_DIR`. Wenn der Hoster automatisch sichert, das Verzeichnis davon ausnehmen.
+- Erst sichern, wenn alle Umfragen geschlossen sind. Ältere Sicherungen aus der Laufzeit einer Umfrage
+  danach löschen.
+- Zugriff auf den Server, das Volume und die Sicherungen nur für wenige, benannte Personen. Wer das ist,
+  sollte den Teilnehmenden bekannt sein.
+- SQLite schreibt bei jedem Speichern kurz ein Rollback-Journal neben die Datenbank und löscht es danach
+  (die temporäre Kopie beim Neuschreiben bleibt im Arbeitsspeicher),
+  ohne es zu überschreiben. Gelöschte Dateien lassen sich auf Blockebene unter Umständen wiederherstellen.
+  `DATA_DIR` deshalb auf ein verschlüsseltes Dateisystem legen; bei SSDs `discard`/TRIM aktivieren.
+- Für das Neuschreiben der Datei (`VACUUM`) wird freier Platz von etwa der doppelten Dateigröße gebraucht.
+  Keine fremden Programme (z. B. `sqlite3` oder Backup-Werkzeuge) auf der laufenden Datenbank öffnen; das
+  blockiert das Neuschreiben.
+- Ohne Docker liegt die Datei mit den Rechten der Standard-`umask`. Den Ordner auf den Dienstbenutzer
+  beschränken, z. B. `chmod 700 /var/lib/umfrage`.
+- Ohne Sicherung gehen die Antworten bei einem Plattenschaden verloren. Für eine Umfrage ist das meist das
+  kleinere Übel.
+- Gegen jemanden, der den Server selbst kontrolliert (Speicher auslesen, Code ändern), schützt keine dieser
+  Maßnahmen.
+
 ## nginx davor (mit HTTPS, ohne Access-Log)
 
 Die Anwendung selbst speichert keine IP-Adressen. Ein vorgeschalteter Webserver tut das aber
@@ -134,13 +169,22 @@ server {
     # Fehlerlog nur für echte Fehler; es kann Client-Adressen enthalten
     error_log /var/log/nginx/umfrage-error.log crit;
 
+    # Nach dem ersten Besuch ruft der Browser die Seite nur noch per https auf. Links trotzdem immer
+    # als https:// verteilen; der allererste http-Aufruf ginge sonst im Klartext.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
     client_max_body_size 300k;
+    # Anfragen mit Antworten nie als Temp-Datei auf die Platte: sonst stünden alle Antworten einer
+    # Person zusammen in einer gelöschten, aber wiederherstellbaren Datei
+    client_body_buffer_size 300k;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         # Bewusst kein X-Forwarded-For / X-Real-IP: die Anwendung braucht keine IP-Adressen
+        # Antworten (z. B. ein Formular mit Fehlern samt eingegebenen Werten) nie in proxy_temp puffern
+        proxy_max_temp_file_size 0;
     }
 }
 
@@ -148,9 +192,20 @@ server {
     listen 80;
     server_name umfrage.example.org;
     access_log off;
+    error_log /var/log/nginx/umfrage-error.log crit;
     return 301 https://$host$request_uri;
 }
 ```
+
+Läuft auf dem Server nur diese Anwendung, beide `listen` mit `default_server` versehen. Sonst landen
+Anfragen ohne passenden Namen und TLS-Fehler im Standard-Log eines anderen `server`-Blocks; dann auf
+`http`-Ebene ebenfalls `access_log off;` und `error_log … crit;` setzen.
+
+Weitere Stellen, an denen IP-Adressen oder Datenmengen protokolliert werden können: ältere Logs und
+`logrotate`-Archive (löschen), ein CDN, Load-Balancer oder eine WAF davor, Firewall- und Hoster-Logs. Bei
+Caddy oder Traefik das Access-Log ausdrücklich abschalten. Die Größe von Anfragen (`$request_length`) für
+`/u/` nicht protokollieren; sie verrät die Länge von Freitexten. Auch den Referer (`$http_referer`) nicht
+protokollieren: Innerhalb der Seite enthält er den Umfrage-Link.
 
 HTTPS ist Pflicht: Ohne Verschlüsselung könnten Antworten unterwegs mitgelesen werden, und das
 Admin-Sitzungscookie wäre nicht geschützt. Mit `PUBLIC_URL=https://…` wird das Cookie automatisch als
@@ -161,10 +216,13 @@ Admin-Sitzungscookie wäre nicht geschützt. Mit `PUBLIC_URL=https://…` wird d
 1. Unter `/admin` anmelden, „Neue Umfrage“ anlegen.
 2. Titel, Einleitung, Danketext und Mindestzahl der Teilnahmen festlegen, Fragen hinzufügen und sortieren.
    Die Vorschau zeigt das Formular so, wie Teilnehmende es sehen.
-3. „Öffnen“: Ab jetzt sind die Fragen eingefroren. Den angezeigten Link teilen.
-4. Während die Umfrage läuft, sieht der Adminbereich nur die Zahl der Teilnahmen.
+3. „Öffnen“: Ab jetzt sind die Fragen eingefroren. Den angezeigten Link über einen Weg teilen, den alle
+   sehen (Gruppenmail, Teamchat oder Aushang), und den Umfrage-Code dazuschreiben. Der Code in der Einladung
+   ersetzt nicht, dass Teilnehmende ihn untereinander vergleichen.
+4. Während die Umfrage läuft, sieht der Adminbereich weder Inhalte noch die Zahl der Teilnahmen.
 5. „Schließen“ (endgültig, optional automatisch zu einem Zeitpunkt). Danach gibt es die Auswertung und den
-   PDF-Export. Wer weitermachen will, dupliziert die Umfrage.
+   PDF-Export. Liegen weniger Teilnahmen als die Mindestzahl vor, werden die Antworten beim Schließen
+   gelöscht. Wer weitermachen will, dupliziert die Umfrage.
 
 ## Release-Ablauf
 
@@ -189,12 +247,16 @@ docker compose up -d --build`). Die GitHub-Action prüft bei jedem Tag, dass er 
 
 Der Fuß jeder Seite zeigt „Version x.y.z“ und den Prüfstatus:
 
-- **Code identisch mit GitHub-Version vX.Y.Z** – jede Datei stimmt mit dem Tag überein, keine zusätzlichen.
+- **Code identisch mit GitHub-Version vX.Y.Z** – jede Datei des Repositorys stimmt mit dem Tag überein,
+  keine zusätzlichen. Nicht geprüft werden `node_modules`, die Node-Laufzeit, das Container-Image und
+  Startparameter wie `NODE_OPTIONS`.
 - **Code weicht von GitHub-Version vX.Y.Z ab** – `/transparenz` listet abweichende, fehlende und
   zusätzliche Dateien.
 - **Code nicht geprüft: <Grund>** – z. B. GitHub nicht erreichbar oder Tag noch nicht veröffentlicht.
 
-Die Prüfung macht der Server selbst. Wer ihr nicht trauen will, vergleicht unabhängig:
+Die Prüfung macht der Server selbst, und auch `/transparenz` ist seine Selbstauskunft. Der Vergleich mit
+GitHub zeigt deshalb nur, was der Server über sich behauptet; die eigentliche Prüfung braucht Zugriff auf
+den Server (siehe unten). Selbstauskunft abgleichen:
 
 ```sh
 git clone https://github.com/havok2-htwo/AnonymeUmfrage && cd AnonymeUmfrage

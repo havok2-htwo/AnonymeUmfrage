@@ -81,7 +81,7 @@ function dashboardBody({ req, csrfField, surveys, notice, createError = '', crea
     <tr>
       <td><a href="/admin/surveys/${s.id}" class="break">${s.title}</a></td>
       <td>${statusBadge(s.status)}</td>
-      <td class="num">${formatNumber(s.response_count)}</td>
+      <td class="num">${s.status === 'open' ? html`<span class="muted" title="Die Zahl erscheint erst nach dem Schließen">–</span>` : formatNumber(s.response_count)}</td>
       <td class="num">${formatNumber(s.question_count)}</td>
       <td>${s.created_by_name || html`<span class="muted">gelöscht</span>`}</td>
       <td class="nowrap">${formatDate(s.created_at)}</td>

@@ -73,6 +73,9 @@ function applyPragmas(db) {
   // Regel 13: kein WAL (würde Reihenfolge in der -wal-Datei konservieren), gelöschte Daten überschreiben.
   db.exec('PRAGMA journal_mode = DELETE;');
   db.exec('PRAGMA secure_delete = ON;');
+  // VACUUM baut die Datei in einer temporären Datenbank neu auf. Die liegt sonst im Temp-Verzeichnis (im
+  // Container im Overlay-Dateisystem) und wäre als gelöschte Datei eine zweite Kopie der Antworten.
+  db.exec('PRAGMA temp_store = MEMORY;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
 }
