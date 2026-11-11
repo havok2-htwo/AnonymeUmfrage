@@ -72,7 +72,7 @@ function layout({
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-${noindex ? raw('<meta name="robots" content="noindex, nofollow">\n') : ''}<meta name="referrer" content="no-referrer">
+${noindex ? raw('<meta name="robots" content="noindex, nofollow">\n') : ''}<meta name="referrer" content="same-origin">
 <meta name="color-scheme" content="dark light">
 <title>${fullTitle}</title>
 <link rel="icon" href="${asset('/img/favicon.svg')}" type="image/svg+xml">

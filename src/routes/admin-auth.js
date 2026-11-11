@@ -32,7 +32,9 @@ function checkOrigin(req, config) {
   if (site && site !== 'same-origin' && site !== 'none') return false;
   const origin = req.headers.origin;
   if (origin === undefined) return true;
-  if (origin === 'null') return false;
+  // „null“ schicken Browser z. B. bei strenger Referrer-Policy. Dann zählt nur, ob der Browser selbst
+  // die Anfrage als same-origin ausweist (Sec-Fetch-Site lässt sich von Webseiten nicht fälschen).
+  if (origin === 'null') return site === 'same-origin';
   let host;
   try {
     host = new URL(origin).host.toLowerCase();

@@ -15,7 +15,7 @@ const CSP = [
 
 const HEADERS = {
   'Content-Security-Policy': CSP,
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',

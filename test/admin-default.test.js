@@ -137,3 +137,16 @@ test('Migration: Schema 1 bekommt die Spalte must_change_password', () => {
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('Login: Origin „null“ gilt nur mit Sec-Fetch-Site same-origin (Browser mit strenger Referrer-Policy)', async (t) => {
+  const app = await startApp(t);
+  const login = (headers) => fetch(`${app.url}/admin/login`, {
+    method: 'POST', redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
+    body: new URLSearchParams({ username: 'admin', password: 'admin' }),
+  });
+  assert.equal((await login({ origin: 'null', 'sec-fetch-site': 'same-origin' })).status, 303);
+  assert.equal((await login({ origin: 'null' })).status, 403);
+  assert.equal((await login({ origin: 'null', 'sec-fetch-site': 'cross-site' })).status, 403);
+  assert.equal((await login({ origin: app.url })).status, 303);
+});

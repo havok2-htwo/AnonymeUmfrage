@@ -106,7 +106,7 @@ test('HTTP: Startseite, Header, keine Cookies, Login mit CSRF', async (t) => {
   assert.equal(home.status, 200);
   assert.equal(home.headers.get('set-cookie'), null);
   assert.match(home.headers.get('content-security-policy'), /default-src 'none'/);
-  assert.equal(home.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(home.headers.get('referrer-policy'), 'same-origin');
   assert.equal(home.headers.get('x-frame-options'), 'DENY');
   assert.equal(home.headers.get('x-powered-by'), null);
   const text = await home.text();

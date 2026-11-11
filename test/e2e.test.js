@@ -31,7 +31,7 @@ function form(data) {
 function assertSecurityHeaders(res, label) {
   const h = res.headers;
   assert.equal(h.get('content-security-policy'), CSP, `${label}: CSP`);
-  assert.equal(h.get('referrer-policy'), 'no-referrer', `${label}: Referrer-Policy`);
+  assert.equal(h.get('referrer-policy'), 'same-origin', `${label}: Referrer-Policy`);
   assert.equal(h.get('x-content-type-options'), 'nosniff', `${label}: nosniff`);
   assert.equal(h.get('x-frame-options'), 'DENY', `${label}: X-Frame-Options`);
   assert.equal(h.get('permissions-policy'), 'camera=(), microphone=(), geolocation=(), interest-cohort=()', `${label}: Permissions-Policy`);

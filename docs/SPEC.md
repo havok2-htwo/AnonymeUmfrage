@@ -88,7 +88,7 @@ Diese Regeln sind der Kern des Projekts. Jede Abweichung ist ein Fehler.
    Server. Sicherheitsheader:
    - `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self';
      font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
-   - `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+   - `Referrer-Policy: same-origin` (fremde Seiten erfahren nichts; die eigene Seite braucht die Herkunft für die Prüfung von Formularen), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
      `Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()`,
      `Cross-Origin-Opener-Policy: same-origin`. Kein `X-Powered-By`, kein `Server`-Header mit Version.
    - Öffentliche Umfrageseiten: `Cache-Control: no-store`.
