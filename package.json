@@ -1,0 +1,19 @@
+{
+  "name": "anonyme-umfrage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Selbst gehostetes, anonymes Umfragetool mit überprüfbarem Code",
+  "license": "MIT",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "release:check": "node scripts/release-check.js"
+  },
+  "dependencies": {
+    "pdfkit": "^0.20.2"
+  }
+}

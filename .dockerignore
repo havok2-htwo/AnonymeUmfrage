@@ -1,0 +1,8 @@
+# Nur das, was nicht zum Repository gehört. Alles andere muss ins Image, sonst schlägt der
+# Abgleich mit GitHub fehl („fehlende Datei“). .env ist ohnehin nicht versioniert und enthält
+# Zugangsdaten; im Image wäre sie eine zusätzliche Datei.
+node_modules
+.git
+data
+.env
+.env.*

@@ -1,0 +1,33 @@
+# Start: docker compose up -d --build
+# Erster Admin: ADMIN_USER und ADMIN_PASSWORD beim ersten Start setzen (z. B. in einer .env-Datei neben
+# dieser Datei) oder danach per „docker compose exec umfrage node src/cli.js create-admin <name>“.
+
+services:
+  umfrage:
+    build: .
+    image: anonyme-umfrage:local
+    restart: unless-stopped
+    # Nur lokal erreichbar; davor ein Reverse-Proxy mit HTTPS und ohne Access-Log (siehe README).
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      INTEGRITY_CHECK: ${INTEGRITY_CHECK:-on}
+      REPO: ${REPO:-havok2-htwo/AnonymeUmfrage}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    volumes:
+      - umfrage-daten:/data
+    # Docker protokolliert nur, was die Anwendung selbst ausgibt (Start, Prüfstatus, Fehlerarten).
+    # Anfragedaten schreibt die Anwendung nie.
+    logging:
+      driver: local
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+volumes:
+  umfrage-daten:

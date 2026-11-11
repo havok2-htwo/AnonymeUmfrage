@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  tag-version:
+    name: Tag passt zur Version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Tag mit package.json vergleichen
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const lock = require("./package-lock.json");
+            const expected = "v" + pkg.version;
+            const tag = process.env.TAG;
+            if (tag !== expected) {
+              console.error(`Tag ${tag} passt nicht zur Version in package.json (${expected}).`);
+              process.exit(1);
+            }
+            if (lock.version !== pkg.version) {
+              console.error(`package-lock.json hat Version ${lock.version}, package.json ${pkg.version}.`);
+              process.exit(1);
+            }
+            console.log(`Tag ${tag} passt zur Version ${pkg.version}.`);
+          '
+      - name: Fingerabdruck wie auf der Transparenzseite
+        run: |
+          echo "Gesamt-Fingerabdruck dieses Tags:"
+          git -c core.quotePath=false ls-tree -r --format='%(path) %(objectname)' HEAD | LC_ALL=C sort | sha256sum
